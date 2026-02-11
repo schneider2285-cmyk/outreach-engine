@@ -134,7 +134,7 @@ export async function POST() {
                 .from('prospects')
                 .select('id')
                 .eq('tenant_id', TENANT_ID)
-                .eq('name', contact.name)
+                .eq('full_name', contact.name)
                 .maybeSingle();
 
             if (existing) {
@@ -153,21 +153,24 @@ export async function POST() {
                 'declined': 'sent',
             };
 
-            const mappedStatus = statusMap[contact.status.toLowerCase()] || 'researching';
+            const rawStatus = contact.status.toLowerCase().replace(/[^a-z ]/g, '').trim();
+            const mappedStatus = statusMap[rawStatus] || 'new';
 
             const { error } = await supabase.from('prospects').insert({
                 tenant_id: TENANT_ID,
                 account_id: ACCOUNT_ID,
-                name: contact.name,
-                title: contact.title,
+                full_name: contact.name,
+                title: contact.title || null,
+                location: contact.location || null,
                 seniority: parseTierToSeniority(contact.tier),
+                department: null,
+                bu_hypothesis: contact.initiative || null,
                 status: mappedStatus,
-                priority_score: contact.tier === 'T0' ? 95 : contact.tier === 'T1' ? 85 : contact.tier === 'T2' ? 70 : 55,
-                notes: [contact.initiative, contact.location, contact.channel].filter(Boolean).join(' | '),
+                persona_segment: null,
             });
 
             if (error) {
-                errors.push(`Failed to insert ${contact.name}: ${error.message}`);
+                errors.push(`${contact.name}: ${error.message}`);
             } else {
                 synced++;
             }
