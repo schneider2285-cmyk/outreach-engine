@@ -12,14 +12,12 @@ interface Stats {
 }
 
 interface SyncResult {
-  success?: boolean;
+  message?: string;
+  synced?: number;
+  skipped?: number;
+  total?: number;
   error?: string;
-  summary?: {
-    total_in_sheet: number;
-    inserted: number;
-    updated: number;
-    skipped: number;
-  };
+  errors?: string[];
 }
 
 export default function Dashboard() {
@@ -27,7 +25,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [syncConfig, setSyncConfig] = useState<{ configured: boolean; current_prospects: number } | null>(null);
 
   const loadStats = () => {
     fetch('/api/stats')
@@ -36,10 +33,7 @@ export default function Dashboard() {
       .catch(() => setLoading(false));
   };
 
-  useEffect(() => {
-    loadStats();
-    fetch('/api/sync-sheet').then(r => r.json()).then(setSyncConfig).catch(() => {});
-  }, []);
+  useEffect(() => { loadStats(); }, []);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -48,7 +42,7 @@ export default function Dashboard() {
       const res = await fetch('/api/sync-sheet', { method: 'POST' });
       const data = await res.json();
       setSyncResult(data);
-      if (data.success) {
+      if (!data.error) {
         loadStats();
       }
     } catch (err: any) {
@@ -57,9 +51,13 @@ export default function Dashboard() {
     setSyncing(false);
   };
 
-  if (loading) return (<div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading...</div>);
+  if (loading) return (
+    <div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading...</div>
+  );
 
   const s = stats || { accounts: 0, prospects: 0, drafted: 0, contacted: 0, recent_prospects: [], account_list: [] };
+
+  const isSuccess = syncResult && !syncResult.error;
 
   return (
     <div>
@@ -74,21 +72,13 @@ export default function Dashboard() {
             disabled={syncing}
             style={{
               background: syncing ? 'var(--bg-hover)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '10px 18px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: syncing ? 'wait' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              opacity: syncing ? 0.7 : 1,
-              transition: 'all 0.15s',
+              color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px',
+              fontSize: 13, fontWeight: 600, cursor: syncing ? 'wait' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8,
+              opacity: syncing ? 0.7 : 1, transition: 'all 0.15s',
             }}
           >
-            <span style={{ fontSize: 16 }}>{syncing ? '⏳' : '🔄'}</span>
+            <span style={{ fontSize: 16 }}>{syncing ? '\u23F3' : '\uD83D\uDD04'}</span>
             {syncing ? 'Syncing...' : 'Sync from Sheet'}
           </button>
         </div>
@@ -96,22 +86,17 @@ export default function Dashboard() {
 
       {syncResult && (
         <div style={{
-          padding: '12px 16px',
-          borderRadius: 8,
-          marginBottom: 20,
-          fontSize: 13,
-          background: syncResult.success ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-          border: `1px solid ${syncResult.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-          color: syncResult.success ? '#22c55e' : '#ef4444',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          padding: '12px 16px', borderRadius: 8, marginBottom: 20, fontSize: 13,
+          background: isSuccess ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          border: `1px solid ${isSuccess ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          color: isSuccess ? '#22c55e' : '#ef4444',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <div>
-            {syncResult.success ? (
-              <span>Sheet sync complete: {syncResult.summary?.total_in_sheet} contacts, {syncResult.summary?.inserted} new, {syncResult.summary?.updated} updated</span>
+            {isSuccess ? (
+              <span>{syncResult.message} (total: {syncResult.total})</span>
             ) : (
-              <span>{syncResult.error}</span>
+              <span>{syncResult.error || 'Unknown error'}</span>
             )}
           </div>
           <button
@@ -128,7 +113,10 @@ export default function Dashboard() {
           { label: 'DRAFTED', value: s.drafted, color: 'var(--accent-yellow)' },
           { label: 'CONTACTED', value: s.contacted, color: 'var(--accent-purple)' },
         ].map(card => (
-          <div key={card.label} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px 24px', textAlign: 'center' }}>
+          <div key={card.label} style={{
+            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+            borderRadius: 10, padding: '20px 24px', textAlign: 'center'
+          }}>
             <div style={{ fontSize: 32, fontWeight: 800, color: card.color }}>{card.value}</div>
             <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--text-muted)', marginTop: 4 }}>{card.label}</div>
           </div>
