@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/prospects" label="All Prospects" icon="👤" />
             </div>
             <div style={{ marginTop: 'auto', padding: '16px 20px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
-              Phase 1 — Mock Data
+              Phase 2 — Live Data + Sheet Sync
             </div>
           </nav>
           <main style={{ flex: 1, overflow: 'auto', padding: 32 }}>
