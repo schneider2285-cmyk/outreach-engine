@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { Account, Prospect } from '@/types';
 
 export default function AccountDetailPage() {
@@ -8,6 +9,8 @@ export default function AccountDetailPage() {
   const accountId = params.id as string;
   const [account, setAccount] = useState<Account | null>(null);
   const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addMode, setAddMode] = useState<'manual' | 'linkedin'>('manual');
   const [form, setForm] = useState({
@@ -16,10 +19,24 @@ export default function AccountDetailPage() {
   });
 
   useEffect(() => {
-    fetch('/api/accounts').then(r => r.json()).then((accs: Account[]) => {
-      setAccount(accs.find(a => a.id === accountId) || null);
-    });
-    fetch(`/api/prospects?account_id=${accountId}`).then(r => r.json()).then(setProspects);
+    Promise.all([
+      fetch('/api/accounts').then(r => {
+        if (!r.ok) throw new Error('Failed to load account');
+        return r.json();
+      }),
+      fetch(`/api/prospects?account_id=${accountId}`).then(r => {
+        if (!r.ok) throw new Error('Failed to load prospects');
+        return r.json();
+      }),
+    ])
+      .then(([accs, pros]: [Account[], Prospect[]]) => {
+        const found = accs.find(a => a.id === accountId);
+        if (!found) throw new Error('Account not found');
+        setAccount(found);
+        setProspects(pros);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
   }, [accountId]);
 
   const handleAddProspect = async () => {
@@ -29,6 +46,7 @@ export default function AccountDetailPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, account_id: accountId }),
     });
+    if (!res.ok) return;
     const newP = await res.json();
     newP.account_name = account?.name;
     setProspects(prev => [...prev, newP]);
@@ -36,13 +54,21 @@ export default function AccountDetailPage() {
     setForm({ full_name: '', title: '', linkedin_url: '', email: '', location: '', seniority: '', department: '', raw_linkedin_text: '' });
   };
 
-  if (!account) return <div style={{ color: 'var(--text-muted)' }}>Loading...</div>;
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-muted)' }}>⏳ Loading account...</div>;
+  if (error || !account) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ color: 'var(--red)', marginBottom: 12 }}>{error || 'Account not found'}</div>
+        <Link href="/accounts" className="btn btn-secondary">Back to Accounts</Link>
+      </div>
+    </div>
+  );
 
   return (
     <div>
       {/* Header */}
       <div style={{ marginBottom: 4 }}>
-        <a href="/accounts" style={{ fontSize: 12, color: 'var(--text-muted)' }}>← Back to Accounts</a>
+        <Link href="/accounts" style={{ fontSize: 12, color: 'var(--text-muted)' }}>← Back to Accounts</Link>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>

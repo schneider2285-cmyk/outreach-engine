@@ -4,11 +4,18 @@ import { Account } from '@/types';
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState({ name: '', domain: '', industry: '', hq_location: '', employee_count: '', notes: '' });
 
   useEffect(() => {
-    fetch('/api/accounts').then(r => r.json()).then(setAccounts);
+    fetch('/api/accounts')
+      .then(r => { if (!r.ok) throw new Error('Failed to load accounts'); return r.json(); })
+      .then(setAccounts)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleCreate = async () => {
@@ -18,11 +25,21 @@ export default function AccountsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     });
+    if (!res.ok) return;
     const newAccount = await res.json();
     setAccounts(prev => [...prev, newAccount]);
     setShowCreate(false);
     setForm({ name: '', domain: '', industry: '', hq_location: '', employee_count: '', notes: '' });
   };
+
+  const filtered = accounts.filter(a =>
+    a.name.toLowerCase().includes(search.toLowerCase()) ||
+    (a.industry || '').toLowerCase().includes(search.toLowerCase()) ||
+    (a.domain || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-muted)' }}>⏳ Loading accounts...</div>;
+  if (error) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}><div style={{ textAlign: 'center' }}><div style={{ color: 'var(--red)', marginBottom: 12 }}>{error}</div><button className="btn btn-secondary" onClick={() => window.location.reload()}>Retry</button></div></div>;
 
   return (
     <div>
@@ -34,8 +51,19 @@ export default function AccountsPage() {
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Add Account</button>
       </div>
 
+      {/* Search */}
+      <div style={{ marginBottom: 20 }}>
+        <input
+          type="text"
+          placeholder="Search accounts by name, industry, or domain..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ maxWidth: 400 }}
+        />
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
-        {accounts.map(a => (
+        {filtered.map(a => (
           <a key={a.id} href={`/accounts/${a.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="card" style={{ cursor: 'pointer', transition: 'border-color 0.15s' }}
               onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
@@ -43,7 +71,7 @@ export default function AccountsPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 700 }}>{a.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{a.domain}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{a.domain || '—'}</div>
                 </div>
                 <span className="badge badge-new">{a.prospect_count || 0} prospects</span>
               </div>
@@ -59,6 +87,9 @@ export default function AccountsPage() {
             </div>
           </a>
         ))}
+        {filtered.length === 0 && search && (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20 }}>No accounts match &ldquo;{search}&rdquo;</div>
+        )}
       </div>
 
       {/* Create modal */}

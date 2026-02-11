@@ -4,14 +4,29 @@ import { Prospect } from '@/types';
 
 export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    fetch('/api/prospects').then(r => r.json()).then(setProspects);
+    fetch('/api/prospects')
+      .then(r => { if (!r.ok) throw new Error('Failed to load prospects'); return r.json(); })
+      .then(setProspects)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  const filtered = filter === 'all' ? prospects : prospects.filter(p => p.status === filter);
+  const byStatus = filter === 'all' ? prospects : prospects.filter(p => p.status === filter);
+  const filtered = byStatus.filter(p =>
+    p.full_name.toLowerCase().includes(search.toLowerCase()) ||
+    (p.title || '').toLowerCase().includes(search.toLowerCase()) ||
+    (p.account_name || '').toLowerCase().includes(search.toLowerCase())
+  );
   const statuses = ['all', 'new', 'researched', 'drafted', 'contacted', 'engaged'];
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-muted)' }}>⏳ Loading prospects...</div>;
+  if (error) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}><div style={{ textAlign: 'center' }}><div style={{ color: 'var(--red)', marginBottom: 12 }}>{error}</div><button className="btn btn-secondary" onClick={() => window.location.reload()}>Retry</button></div></div>;
 
   return (
     <div>
@@ -25,6 +40,17 @@ export default function ProspectsPage() {
             {s} {s === 'all' ? `(${prospects.length})` : `(${prospects.filter(p => p.status === s).length})`}
           </div>
         ))}
+      </div>
+
+      {/* Search */}
+      <div style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          placeholder="Search by name, title, or account..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ maxWidth: 400 }}
+        />
       </div>
 
       <div className="card">
@@ -51,7 +77,9 @@ export default function ProspectsPage() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>No prospects match this filter.</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                {search ? `No prospects match "${search}"` : 'No prospects match this filter.'}
+              </td></tr>
             )}
           </tbody>
         </table>

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { Prospect, Draft, Outcome, ResearchRun, WebEvidence, Insight, OutcomeType } from '@/types';
 
 interface ProspectDetail {
@@ -16,6 +17,8 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.id as string;
   const [data, setData] = useState<ProspectDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState('overview');
   const [researchTier, setResearchTier] = useState<'quick' | 'standard' | 'deep'>('quick');
   const [researching, setResearching] = useState(false);
@@ -25,12 +28,29 @@ export default function ProspectDetailPage() {
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
 
   const load = () => {
-    fetch(`/api/prospects/${prospectId}`).then(r => r.json()).then(setData);
+    fetch(`/api/prospects/${prospectId}`)
+      .then(r => {
+        if (!r.ok) throw new Error('Prospect not found');
+        return r.json();
+      })
+      .then(setData)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [prospectId]);
 
-  if (!data) return <div style={{ color: 'var(--text-muted)' }}>Loading...</div>;
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-muted)' }}>⏳ Loading prospect...</div>;
+  if (error || !data) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ color: 'var(--red)', marginBottom: 12 }}>{error || 'Prospect not found'}</div>
+        <Link href="/prospects" className="btn btn-secondary">Back to Prospects</Link>
+      </div>
+    </div>
+  );
+
   const { prospect, drafts, outcomes, research_runs, evidence, insights } = data;
 
   const runResearch = async () => {
@@ -76,7 +96,7 @@ export default function ProspectDetailPage() {
     <div>
       {/* Header */}
       <div style={{ marginBottom: 4 }}>
-        <a href={`/accounts/${prospect.account_id}`} style={{ fontSize: 12, color: 'var(--text-muted)' }}>← {prospect.account_name || 'Account'}</a>
+        <Link href={`/accounts/${prospect.account_id}`} style={{ fontSize: 12, color: 'var(--text-muted)' }}>← {prospect.account_name || 'Account'}</Link>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
@@ -155,7 +175,7 @@ export default function ProspectDetailPage() {
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
               {researchTier === 'quick' && 'Max 2 searches. ~$0.01. Fast facts & role summary.'}
               {researchTier === 'standard' && 'Max 8 searches across source packs. ~$0.03. Full profile + BU mapping.'}
-              {researchTier === 'deep' && '⚠️ Up to 15 searches. ~$0.09. Deep initiative mapping. Stops early if diminishing returns.'}
+              {researchTier === 'deep' && 'Up to 15 searches. ~$0.09. Deep initiative mapping. Stops early if diminishing returns.'}
             </div>
             <button className="btn btn-primary" onClick={runResearch} disabled={researching}>
               {researching ? '⏳ Running...' : `Run ${researchTier} research`}
@@ -191,7 +211,7 @@ export default function ProspectDetailPage() {
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{ev.source_title || 'Source'}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, lineHeight: 1.5 }}>{ev.snippet}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
-                    <a href={ev.source_url} target="_blank" rel="noopener noreferrer">{ev.source_url}</a>
+                    <span style={{ color: 'var(--blue)' }}>{ev.source_url}</span>
                     {ev.relevance_score && <span>Relevance: {(ev.relevance_score * 100).toFixed(0)}%</span>}
                   </div>
                 </div>
@@ -345,7 +365,7 @@ function InfoRow({ label, value, isLink }: { label: string; value?: string | nul
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
       <span style={{ color: 'var(--text-muted)' }}>{label}</span>
       {isLink && value ? (
-        <a href={value} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>{value}</a>
+        <span style={{ fontSize: 12, color: 'var(--blue)' }}>{value}</span>
       ) : (
         <span style={{ color: 'var(--text-secondary)' }}>{value || '—'}</span>
       )}
