@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase, TENANT_ID } from '@/lib/supabase';
 
-const GOOGLE_SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || '';
 const SHEET_ID = process.env.GOOGLE_SHEET_ID || '';
-const SHEET_RANGE = process.env.GOOGLE_SHEET_RANGE || 'Sheet1!A1:Z500';
+const ACCOUNT_ID = 'a1b2c3d4-1111-4000-8000-000000000001';
 
 interface SheetContact {
     name: string;
@@ -12,220 +11,177 @@ interface SheetContact {
     tier: string;
     initiative: string;
     status: string;
-    department: string;
     channel: string;
 }
 
 function parseTierToSeniority(tier: string): string {
     switch (tier?.toUpperCase()) {
-      case 'T0': return 'C-Suite';
-      case 'T1': return 'C-Suite';
-      case 'T2': return 'VP';
-      case 'T3': return 'Director';
-      default: return 'Unknown';
+        case 'T0': return 'C-Suite';
+        case 'T1': return 'C-Suite';
+        case 'T2': return 'VP';
+        case 'T3': return 'Director';
+        default: return 'Manager';
     }
 }
 
-function parseTierToPersona(tier: string): string {
-    switch (tier?.toUpperCase()) {
-      case 'T0': return 'executive_sponsor';
-      case 'T1': return 'economic_buyer';
-      case 'T2': return 'economic_buyer';
-      case 'T3': return 'technical_buyer';
-      default: return 'influencer';
+function parseCSV(text: string): string[][] {
+    const rows: string[][] = [];
+    let current = '';
+    let inQuotes = false;
+    let row: string[] = [];
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (i + 1 < text.length && text[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                current += ch;
+            }
+        } else {
+            if (ch === '"') {
+                inQuotes = true;
+            } else if (ch === ',') {
+                row.push(current);
+                current = '';
+            } else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
+                if (ch === '\r') i++;
+                row.push(current);
+                current = '';
+                if (row.length > 1 || row[0] !== '') rows.push(row);
+                row = [];
+            } else {
+                current += ch;
+            }
+        }
     }
+    row.push(current);
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+    return rows;
 }
 
-function mapSheetStatus(status: string): string {
-    const s = status?.toLowerCase() || '';
-    if (s.includes('responded') || s.includes('engaged')) return 'contacted';
-    if (s.includes('outreach sent') || s.includes('sent')) return 'contacted';
-    if (s.includes('researched') || s.includes('drafted')) return 'researched';
-    return 'new';
-}
-
-// POST /api/sync-sheet — Pull contacts from Google Sheet into Supabase
 export async function POST() {
     try {
-          if (!GOOGLE_SHEETS_API_KEY || !SHEET_ID) {
-                  return NextResponse.json(
-                    { error: 'Google Sheets API key or Sheet ID not configured. Add GOOGLE_SHEETS_API_KEY and GOOGLE_SHEET_ID to environment variables.' },
-                    { status: 500 }
-                          );
-          }
+        if (!SHEET_ID) {
+            return NextResponse.json({ error: 'GOOGLE_SHEET_ID not configured' }, { status: 500 });
+        }
 
-      // Fetch data from Google Sheets API
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_RANGE)}?key=${GOOGLE_SHEETS_API_KEY}`;
-          const sheetRes = await fetch(url);
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Outreach%20Tracker&range=A5:X100`;
 
-      if (!sheetRes.ok) {
-              const errText = await sheetRes.text();
-              return NextResponse.json(
-                { error: `Failed to fetch Google Sheet: ${sheetRes.status} — ${errText}` },
+        const response = await fetch(csvUrl, { cache: 'no-store' });
+        if (!response.ok) {
+            return NextResponse.json(
+                { error: `Failed to fetch sheet: ${response.status} ${response.statusText}` },
                 { status: 500 }
-                      );
-      }
+            );
+        }
 
-      const sheetData = await sheetRes.json();
-          const rows = sheetData.values || [];
+        const csvText = await response.text();
+        const rows = parseCSV(csvText);
 
-      if (rows.length < 2) {
-              return NextResponse.json({ error: 'Sheet is empty or has no data rows' }, { status: 400 });
-      }
+        if (rows.length < 2) {
+            return NextResponse.json({ error: 'No data rows found in sheet' }, { status: 400 });
+        }
 
-      // Parse headers (first row)
-      const headers = rows[0].map((h: string) => h?.toLowerCase().trim());
-          const dataRows = rows.slice(1);
+        const headers = rows[0].map(h => h.trim().toLowerCase());
+        const nameIdx = headers.findIndex(h => h === 'name');
+        const titleIdx = headers.findIndex(h => h === 'title');
+        const locationIdx = headers.findIndex(h => h === 'location');
+        const tierIdx = headers.findIndex(h => h === 'tier');
+        const initiativeIdx = headers.findIndex(h => h === 'initiative');
+        const statusIdx = headers.findIndex(h => h.includes('status'));
+        const channelIdx = headers.findIndex(h => h === 'channel');
 
-      // Map column indices
-      const colMap: Record<string, number> = {};
-          headers.forEach((h: string, i: number) => {
-                  if (h.includes('name') && !h.includes('account')) colMap.name = i;
-                  if (h.includes('title') || h.includes('role')) colMap.title = i;
-                  if (h.includes('location') || h.includes('loc')) colMap.location = i;
-                  if (h.includes('tier')) colMap.tier = i;
-                  if (h.includes('initiative') || h.includes('init')) colMap.initiative = i;
-                  if (h.includes('status')) colMap.status = i;
-                  if (h.includes('department') || h.includes('dept')) colMap.department = i;
-                  if (h.includes('channel') || h.includes('chan')) colMap.channel = i;
-                  if (h.includes('email')) colMap.email = i;
-                  if (h.includes('linkedin')) colMap.linkedin = i;
-                  if (h.includes('phone')) colMap.phone = i;
-          });
-
-      if (colMap.name === undefined) {
-              return NextResponse.json(
-                { error: 'Could not find a "Name" column in the sheet. Ensure your sheet has a header row with a Name column.' },
+        if (nameIdx === -1) {
+            return NextResponse.json(
+                { error: 'Could not find Name column in sheet headers: ' + headers.join(', ') },
                 { status: 400 }
-                      );
-      }
+            );
+        }
 
-      // Get or create default account (Schneider Electric)
-      let { data: account } = await supabase
-            .from('accounts')
-            .select('id')
-            .eq('tenant_id', TENANT_ID)
-            .limit(1)
-            .single();
-
-      if (!account) {
-              const { data: newAccount } = await supabase
-                .from('accounts')
-                .insert({
-                            tenant_id: TENANT_ID,
-                            name: 'Schneider Electric',
-                            domain: 'se.com',
-                            industry: 'Industrial Automation / Energy Management',
-                            hq_location: 'Rueil-Malmaison, France',
-                            employee_count: '150,000+',
-                })
-                .select()
-                .single();
-              account = newAccount;
-      }
-
-      if (!account) {
-              return NextResponse.json({ error: 'Could not find or create account' }, { status: 500 });
-      }
-
-      // Parse contacts from sheet
-      const contacts: SheetContact[] = [];
-          for (const row of dataRows) {
-                  const name = row[colMap.name]?.trim();
-                  if (!name) continue;
+        const contacts: SheetContact[] = [];
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            const name = row[nameIdx]?.trim();
+            if (!name) continue;
 
             contacts.push({
-                      name,
-                      title: row[colMap.title]?.trim() || '',
-                      location: row[colMap.location]?.trim() || '',
-                      tier: row[colMap.tier]?.trim() || '',
-                      initiative: row[colMap.initiative]?.trim() || '',
-                      status: row[colMap.status]?.trim() || '',
-                      department: row[colMap.department]?.trim() || '',
-                      channel: row[colMap.channel]?.trim() || '',
+                name,
+                title: titleIdx >= 0 ? row[titleIdx]?.trim() || '' : '',
+                location: locationIdx >= 0 ? row[locationIdx]?.trim() || '' : '',
+                tier: tierIdx >= 0 ? row[tierIdx]?.trim() || '' : '',
+                initiative: initiativeIdx >= 0 ? row[initiativeIdx]?.trim() || '' : '',
+                status: statusIdx >= 0 ? row[statusIdx]?.trim() || '' : '',
+                channel: channelIdx >= 0 ? row[channelIdx]?.trim() || '' : '',
             });
-          }
+        }
 
-      // Upsert contacts into Supabase
-      let inserted = 0;
-          let updated = 0;
-          let skipped = 0;
+        if (contacts.length === 0) {
+            return NextResponse.json({ message: 'No contacts found in sheet', synced: 0 });
+        }
 
-      for (const contact of contacts) {
-              // Check if prospect already exists (by name + account)
+        let synced = 0;
+        let skipped = 0;
+        const errors: string[] = [];
+
+        for (const contact of contacts) {
             const { data: existing } = await supabase
                 .from('prospects')
-                .select('id, status')
+                .select('id')
                 .eq('tenant_id', TENANT_ID)
-                .eq('account_id', account.id)
-                .eq('full_name', contact.name)
-                .single();
+                .eq('name', contact.name)
+                .maybeSingle();
 
             if (existing) {
-                      // Update if there are meaningful changes
-                const { error: updateErr } = await supabase
-                        .from('prospects')
-                        .update({
-                                      title: contact.title || undefined,
-                                      location: contact.location || undefined,
-                                      seniority: contact.tier ? parseTierToSeniority(contact.tier) : undefined,
-                                      department: contact.department || undefined,
-                                      bu_hypothesis: contact.initiative || undefined,
-                                      persona_segment: contact.tier ? parseTierToPersona(contact.tier) : undefined,
-                                      updated_at: new Date().toISOString(),
-                        })
-                        .eq('id', existing.id);
-
-                if (!updateErr) updated++;
-                      else skipped++;
-            } else {
-                      // Insert new prospect
-                const { error: insertErr } = await supabase
-                        .from('prospects')
-                        .insert({
-                                      tenant_id: TENANT_ID,
-                                      account_id: account.id,
-                                      full_name: contact.name,
-                                      title: contact.title,
-                                      location: contact.location,
-                                      seniority: parseTierToSeniority(contact.tier),
-                                      department: contact.department,
-                                      status: mapSheetStatus(contact.status),
-                                      persona_segment: parseTierToPersona(contact.tier),
-                                      bu_hypothesis: contact.initiative,
-                        });
-
-                if (!insertErr) inserted++;
-                      else skipped++;
+                skipped++;
+                continue;
             }
-      }
 
-      return NextResponse.json({
-              success: true,
-              summary: {
-                        total_in_sheet: contacts.length,
-                        inserted,
-                        updated,
-                        skipped,
-              },
-      });
-    } catch (err: any) {
-          return NextResponse.json({ error: err.message || 'Sync failed' }, { status: 500 });
+            const statusMap: Record<string, string> = {
+                'researching': 'researching',
+                'draft ready': 'draft_ready',
+                'sent': 'sent',
+                'replied': 'replied',
+                'meeting': 'meeting_booked',
+                'meeting booked': 'meeting_booked',
+                'no response': 'sent',
+                'declined': 'sent',
+            };
+
+            const mappedStatus = statusMap[contact.status.toLowerCase()] || 'researching';
+
+            const { error } = await supabase.from('prospects').insert({
+                tenant_id: TENANT_ID,
+                account_id: ACCOUNT_ID,
+                name: contact.name,
+                title: contact.title,
+                seniority: parseTierToSeniority(contact.tier),
+                status: mappedStatus,
+                priority_score: contact.tier === 'T0' ? 95 : contact.tier === 'T1' ? 85 : contact.tier === 'T2' ? 70 : 55,
+                notes: [contact.initiative, contact.location, contact.channel].filter(Boolean).join(' | '),
+            });
+
+            if (error) {
+                errors.push(`Failed to insert ${contact.name}: ${error.message}`);
+            } else {
+                synced++;
+            }
+        }
+
+        return NextResponse.json({
+            message: `Sync complete: ${synced} added, ${skipped} already existed`,
+            synced,
+            skipped,
+            total: contacts.length,
+            errors: errors.length > 0 ? errors : undefined,
+        });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        return NextResponse.json({ error: `Sync failed: ${message}` }, { status: 500 });
     }
-}
-
-// GET /api/sync-sheet — Check sync status / configuration
-export async function GET() {
-    const configured = Boolean(GOOGLE_SHEETS_API_KEY && SHEET_ID);
-
-  const { count } = await supabase
-      .from('prospects')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', TENANT_ID);
-
-  return NextResponse.json({
-        configured,
-        current_prospects: count || 0,
-        sheet_id: SHEET_ID ? `...${SHEET_ID.slice(-8)}` : null,
-  });
 }
