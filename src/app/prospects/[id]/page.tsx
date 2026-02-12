@@ -85,11 +85,11 @@ export default function ProspectDetail() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <a href="/prospects" className="text-gray-400 hover:text-white text-sm">&larr; Back</a>
+      <a href="/prospects" className="text-gray-400 hover:text-white text-sm">Back</a>
       <div className="flex items-start justify-between mt-2">
         <div>
           <h1 className="text-3xl font-bold">{prospect.full_name}</h1>
-          <p className="text-gray-400 mt-1">{prospect.title} &middot; {(prospect.accounts as any)?.name || 'Unknown'}</p>
+          <p className="text-gray-400 mt-1">{prospect.title} - {(prospect.accounts as any)?.name || 'Unknown'}</p>
         </div>
         <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${statusColor[prospect.status] || 'bg-gray-600'}`}>
           {prospect.status}
@@ -97,7 +97,6 @@ export default function ProspectDetail() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        {/* Profile Card */}
         <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
           <h2 className="font-bold text-lg mb-3">Profile</h2>
           <div className="space-y-2 text-sm">
@@ -107,9 +106,8 @@ export default function ProspectDetail() {
           </div>
         </div>
 
-        {/* Research Card */}
         <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-          <h2 className="font-bold text-lg mb-2">\u{1F50D} Research</h2>
+          <h2 className="font-bold text-lg mb-2">Research</h2>
           <p className="text-gray-400 text-sm mb-3">Run Perplexity-powered research on this prospect.</p>
           <div className="flex gap-2">
             {['quick', 'standard', 'deep'].map(tier => (
@@ -122,7 +120,7 @@ export default function ProspectDetail() {
           {researching && <p className="text-yellow-400 text-sm mt-2 animate-pulse">Researching...</p>}
           {researchResult && (
             <div className={`mt-2 p-2 rounded text-sm ${researchResult.error ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
-              {researchResult.error || `\u2705 ${researchResult.searches} searches \u00b7 ${researchResult.evidence_count} evidence items \u00b7 ${researchResult.cost_estimate}`}
+              {researchResult.error || `Done: ${researchResult.searches} searches, ${researchResult.evidence_count} evidence items, ${researchResult.cost_estimate}`}
             </div>
           )}
           {prospect.research_runs?.length > 0 && (
@@ -130,7 +128,7 @@ export default function ProspectDetail() {
               <p className="font-bold">History</p>
               {prospect.research_runs.map((r: any) => (
                 <div key={r.id} className="flex justify-between mt-1">
-                  <span>{r.tier} \u00b7 {r.search_count} searches</span>
+                  <span>{r.tier} - {r.search_count} searches</span>
                   <span>{r.status}</span>
                 </div>
               ))}
@@ -139,18 +137,17 @@ export default function ProspectDetail() {
         </div>
       </div>
 
-      {/* Draft Generation Card */}
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
-        <h2 className="font-bold text-lg mb-2">\u270D\uFE0F Draft Outreach</h2>
+        <h2 className="font-bold text-lg mb-2">Draft Outreach</h2>
         <p className="text-gray-400 text-sm mb-3">Generate personalized outreach drafts using Claude AI. Requires research first.</p>
         <div className="flex gap-2">
           <button onClick={() => generateDrafts('email')} disabled={drafting || prospect.status === 'new'}
             className="bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg py-2 px-6 text-sm font-bold">
-            \u2709 Generate Email Drafts
+            Generate Email Drafts
           </button>
           <button onClick={() => generateDrafts('linkedin')} disabled={drafting || prospect.status === 'new'}
             className="bg-blue-700 hover:bg-blue-600 disabled:opacity-50 rounded-lg py-2 px-6 text-sm font-bold">
-            \u{1F4AC} Generate LinkedIn Drafts
+            Generate LinkedIn Drafts
           </button>
         </div>
         {prospect.status === 'new' && <p className="text-yellow-500 text-xs mt-2">Run research first before generating drafts.</p>}
@@ -158,15 +155,14 @@ export default function ProspectDetail() {
         {draftResult?.error && <p className="text-red-400 text-sm mt-2">{draftResult.error}</p>}
         {draftResult?.status === 'completed' && (
           <div className="mt-2 p-2 rounded text-sm bg-purple-900/50 text-purple-300">
-            \u2705 {draftResult.drafts_count} drafts generated \u00b7 {draftResult.artifacts_count} profile artifacts \u00b7 {draftResult.cost_estimate}
+            {draftResult.drafts_count} drafts generated - {draftResult.artifacts_count} profile artifacts - {draftResult.cost_estimate}
           </div>
         )}
       </div>
 
-      {/* Drafts Display */}
       {drafts.length > 0 && (
         <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
-          <h2 className="font-bold text-lg mb-4">\u{1F4DD} Drafts ({drafts.length})</h2>
+          <h2 className="font-bold text-lg mb-4">Drafts ({drafts.length})</h2>
           <div className="space-y-4">
             {drafts.map((draft: any) => (
               <div key={draft.id} className="bg-gray-900 rounded-lg p-4 border border-gray-700">
@@ -180,11 +176,9 @@ export default function ProspectDetail() {
                     {draft.open_score && <span title="Open Score" className="text-green-400">O:{draft.open_score}</span>}
                     {draft.read_score && <span title="Read Score" className="text-blue-400">R:{draft.read_score}</span>}
                     {draft.reply_score && <span title="Reply Score" className="text-purple-400">Re:{draft.reply_score}</span>}
-                    {draft.claims_audit_passed !== null && (
-                      <span className={draft.claims_audit_passed ? 'text-green-400' : 'text-red-400'}>
-                        {draft.claims_audit_passed ? '\u2705 Claims OK' : '\u26A0\uFE0F Claims'}
-                      </span>
-                    )}
+                    <span className={draft.claims_audit_passed ? 'text-green-400' : 'text-red-400'}>
+                      {draft.claims_audit_passed ? 'Claims OK' : 'Claims Flag'}
+                    </span>
                   </div>
                 </div>
                 {draft.subject && <p className="text-yellow-300 text-sm font-bold mb-1">Subject: {draft.subject}</p>}
@@ -196,9 +190,8 @@ export default function ProspectDetail() {
         </div>
       )}
 
-      {/* Log Outcome */}
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
-        <h2 className="font-bold text-lg mb-2">\u{1F4CA} Log Outcome</h2>
+        <h2 className="font-bold text-lg mb-2">Log Outcome</h2>
         <div className="flex flex-wrap gap-2">
           {['positive', 'neutral', 'objection', 'no_reply', 'referral', 'not_relevant'].map(o => (
             <button key={o} onClick={() => logOutcome(o)}
@@ -209,10 +202,9 @@ export default function ProspectDetail() {
         </div>
       </div>
 
-      {/* Evidence Section */}
       {prospect.web_evidence?.length > 0 && (
         <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
-          <h2 className="font-bold text-lg mb-3">\u{1F4C1} Evidence ({prospect.web_evidence.length})</h2>
+          <h2 className="font-bold text-lg mb-3">Evidence ({prospect.web_evidence.length})</h2>
           <div className="space-y-3 text-sm">
             {prospect.web_evidence.map((e: any) => (
               <div key={e.id}>
