@@ -4,7 +4,7 @@ import { extractProfile, generateDrafts, judgeDrafts } from '@/lib/claude';
 
 // POST /api/prospects/[id]/drafts/generate
 // Phase 3: Full Claude-powered draft generation pipeline
-// Flow: Fetch prospect + evidence -> Extract profile -> Generate drafts -> Judge -> Save to DB
+// Flow: Fetch prospect + evidence + LinkedIn data -> Extract profile -> Generate drafts -> Judge -> Save to DB
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const body = await request.json().catch(() => ({}));
   const channel = body.channel || 'email';
@@ -42,8 +42,33 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const evidenceSnippets = evidence.map(e => e.snippet).filter(Boolean) as string[];
 
+  // 3. Fetch LinkedIn profile artifacts if available
+  const { data: linkedinArtifacts } = await supabase
+    .from('profile_artifacts')
+    .select('artifact_type, content')
+    .eq('prospect_id', params.id)
+    .eq('tenant_id', TENANT_ID)
+    .like('artifact_type', 'linkedin_%');
+
+  // Build LinkedIn context string for enrichment
+  let linkedinContext = '';
+  if (linkedinArtifacts && linkedinArtifacts.length > 0) {
+    linkedinContext = '\n\nLINKEDIN PROFILE DATA:\n';
+    for (const artifact of linkedinArtifacts) {
+      linkedinContext += artifact.artifact_type + ': ' + JSON.stringify(artifact.content).substring(0, 600) + '\n';
+    }
+  } else if (prospect.raw_linkedin_text) {
+    // Fallback to raw text if structured artifacts aren't available
+    linkedinContext = '\n\nLINKEDIN PROFILE (raw text):\n' + prospect.raw_linkedin_text.substring(0, 2000);
+  }
+
+  // Append LinkedIn context to evidence snippets so it flows through the pipeline
+  if (linkedinContext) {
+    evidenceSnippets.push(linkedinContext);
+  }
+
   try {
-    // 3. Extract profile artifacts using Claude
+    // 4. Extract profile artifacts using Claude
     const { artifacts, usage: extractUsage } = await extractProfile(
       prospect.full_name,
       prospect.title,
@@ -51,7 +76,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       evidenceSnippets
     );
 
-    // Save profile artifacts to DB
+    // Save profile artifacts to DB (only non-LinkedIn ones to avoid duplicates)
     for (const artifact of artifacts) {
       await supabase.from('profile_artifacts').insert({
         tenant_id: TENANT_ID,
@@ -73,7 +98,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       });
     }
 
-    // 4. Generate draft variants using Claude
+    // 5. Generate draft variants using Claude
     const { drafts: draftOutputs, usage: draftUsage } = await generateDrafts(
       prospect.full_name,
       prospect.title,
@@ -84,7 +109,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       numVariants
     );
 
-    // 5. Judge/score the drafts using Claude
+    // 6. Judge/score the drafts using Claude
     const { scores, usage: judgeUsage } = await judgeDrafts(
       draftOutputs,
       prospect.full_name,
@@ -92,11 +117,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       evidenceSnippets
     );
 
-    // 6. Save drafts to DB with judge scores
+    // 7. Save drafts to DB with judge scores
     const savedDrafts = [];
     for (const draft of draftOutputs) {
       const score = scores.find(s => s.variant_number === draft.variant_number);
-
       const { data: savedDraft, error: draftErr } = await supabase
         .from('drafts')
         .insert({
@@ -125,13 +149,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       if (savedDraft) savedDrafts.push(savedDraft);
     }
 
-    // 7. Update prospect status
+    // 8. Update prospect status
     await supabase
       .from('prospects')
       .update({ status: 'drafted', updated_at: new Date().toISOString() })
       .eq('id', params.id);
 
-    // 8. Cost estimate
+    // 9. Cost estimate
     const totalInputTokens = (extractUsage?.input_tokens || 0) + (draftUsage?.input_tokens || 0) + (judgeUsage?.input_tokens || 0);
     const totalOutputTokens = (extractUsage?.output_tokens || 0) + (draftUsage?.output_tokens || 0) + (judgeUsage?.output_tokens || 0);
     const costEstimate = (totalInputTokens * 0.003 + totalOutputTokens * 0.015) / 1000;
@@ -141,6 +165,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       prospect_id: params.id,
       drafts_count: savedDrafts.length,
       artifacts_count: artifacts.length,
+      linkedin_enriched: !!linkedinContext,
       drafts: savedDrafts,
       usage: {
         extract: extractUsage,
@@ -151,7 +176,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
       cost_estimate: `$${costEstimate.toFixed(4)}`,
     });
-
   } catch (err: any) {
     console.error('Draft generation error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
