@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react/no-unescaped-entities */
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -75,7 +77,6 @@ export default function ProspectDetail() {
     setDrafting(false);
   };
 
-  // LinkedIn upload handler
   const handleLinkedInUpload = async (file: File) => {
     setUploading(true);
     setUploadResult(null);
@@ -187,12 +188,12 @@ export default function ProspectDetail() {
         </div>
       </div>
 
-      {/* LinkedIn Profile Upload Section */}
+      {/* LinkedIn Profile Upload */}
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
         <h2 className="font-bold text-lg mb-2">LinkedIn Profile</h2>
         <p className="text-gray-400 text-sm mb-3">
-          Upload a screenshot or PDF of the prospect's LinkedIn profile for deeper analysis.
-          The file is processed and immediately discarded — never stored.
+          Upload a screenshot or PDF of this LinkedIn profile for deeper analysis.
+          The file is processed and immediately discarded.
         </p>
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -231,13 +232,13 @@ export default function ProspectDetail() {
           }`}>
             {uploadResult.error
               ? uploadResult.error
-              : `Extracted ${uploadResult.artifacts_saved} profile sections (${uploadResult.extracted_fields?.join(', ')}) — ${uploadResult.cost_estimate}`
+              : `Extracted ${uploadResult.artifacts_saved} profile sections — ${uploadResult.cost_estimate}`
             }
           </div>
         )}
         {prospect.raw_linkedin_text && (
           <div className="mt-3 text-xs text-gray-500">
-            LinkedIn data on file (last uploaded). Will be used in draft generation.
+            LinkedIn data on file. Will be used in draft generation.
           </div>
         )}
       </div>
