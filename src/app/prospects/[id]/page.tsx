@@ -9,6 +9,9 @@ export default function ProspectDetail() {
   const [loading, setLoading] = useState(true);
   const [researching, setResearching] = useState(false);
   const [researchResult, setResearchResult] = useState<any>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [draftResult, setDraftResult] = useState<any>(null);
+  const [drafts, setDrafts] = useState<any[]>([]);
 
   const load = () => {
     fetch(`/api/prospects/${params.id}`)
@@ -17,7 +20,14 @@ export default function ProspectDetail() {
       .catch(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [params.id]);
+  const loadDrafts = () => {
+    fetch(`/api/prospects/${params.id}/drafts/generate`)
+      .then(r => r.json())
+      .then(d => { if (d.drafts) setDrafts(d.drafts); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { load(); loadDrafts(); }, [params.id]);
 
   const runResearch = async (tier: string) => {
     setResearching(true);
@@ -30,82 +40,98 @@ export default function ProspectDetail() {
       });
       const data = await res.json();
       setResearchResult(data);
-      load(); // Refresh prospect data
+      load();
     } catch (err: any) {
       setResearchResult({ error: err.message });
     }
     setResearching(false);
   };
 
-  const logOutcome = async (outcomeType: string, notes: string) => {
+  const generateDrafts = async (channel: string = 'email') => {
+    setDrafting(true);
+    setDraftResult(null);
+    try {
+      const res = await fetch(`/api/prospects/${params.id}/drafts/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, variants: 3 }),
+      });
+      const data = await res.json();
+      setDraftResult(data);
+      if (data.drafts) setDrafts(data.drafts);
+      load();
+    } catch (err: any) {
+      setDraftResult({ error: err.message });
+    }
+    setDrafting(false);
+  };
+
+  const logOutcome = async (outcomeType: string) => {
     await fetch(`/api/prospects/${params.id}/outcomes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ outcome_type: outcomeType, notes }),
+      body: JSON.stringify({ outcome_type: outcomeType }),
     });
     load();
   };
 
-  if (loading) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>Loading...</div>;
-  if (!prospect) return <div style={{ padding: 32, color: 'var(--text-muted)' }}>Prospect not found</div>;
+  if (loading) return <div className="p-8 text-gray-400">Loading...</div>;
+  if (!prospect) return <div className="p-8 text-red-400">Prospect not found</div>;
 
-  const p = prospect;
   const statusColor: Record<string, string> = {
-    new: '#8888ff', researched: '#ffcc00', drafted: '#ff8844', contacted: '#44ccff', engaged: '#44ff88'
+    new: 'bg-blue-600', researched: 'bg-green-600', drafted: 'bg-purple-600',
+    contacted: 'bg-yellow-600', engaged: 'bg-emerald-600',
   };
 
   return (
-    <div>
-      <a href={p.account_id ? `/accounts/${p.account_id}` : '/prospects'} style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none', marginBottom: 8, display: 'inline-block' }}>← Back</a>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div className="p-8 max-w-5xl mx-auto">
+      <a href="/prospects" className="text-gray-400 hover:text-white text-sm">&larr; Back</a>
+      <div className="flex items-start justify-between mt-2">
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>{p.full_name}</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{p.title || 'No title'} · {p.account_name || ''}</p>
+          <h1 className="text-3xl font-bold">{prospect.full_name}</h1>
+          <p className="text-gray-400 mt-1">{prospect.title} &middot; {(prospect.accounts as any)?.name || 'Unknown'}</p>
         </div>
-        <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: `${statusColor[p.status] || '#888'}22`, color: statusColor[p.status] || '#888' }}>{p.status?.toUpperCase()}</span>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${statusColor[prospect.status] || 'bg-gray-600'}`}>
+          {prospect.status}
+        </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Profile</h3>
-          {[
-            ['Location', p.location], ['Seniority', p.seniority], ['Department', p.department],
-            ['Email', p.email], ['LinkedIn', p.linkedin_url], ['BU Hypothesis', p.bu_hypothesis],
-            ['Persona', p.persona_segment],
-          ].map(([label, val]) => val ? (
-            <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-              <span>{label === 'LinkedIn' ? <a href={val as string} target="_blank" rel="noopener" style={{ color: 'var(--accent-blue)' }}>View →</a> : val}</span>
-            </div>
-          ) : null)}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        {/* Profile Card */}
+        <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+          <h2 className="font-bold text-lg mb-3">Profile</h2>
+          <div className="space-y-2 text-sm">
+            {prospect.location && <div className="flex justify-between"><span className="text-gray-400">Location</span><span>{prospect.location}</span></div>}
+            {prospect.seniority && <div className="flex justify-between"><span className="text-gray-400">Seniority</span><span>{prospect.seniority}</span></div>}
+            {prospect.bu_hypothesis && <div className="flex justify-between"><span className="text-gray-400">BU Hypothesis</span><span>{prospect.bu_hypothesis}</span></div>}
+          </div>
         </div>
 
-        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🔬 Research</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Run Perplexity-powered research on this prospect.</p>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {/* Research Card */}
+        <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+          <h2 className="font-bold text-lg mb-2">\u{1F50D} Research</h2>
+          <p className="text-gray-400 text-sm mb-3">Run Perplexity-powered research on this prospect.</p>
+          <div className="flex gap-2">
             {['quick', 'standard', 'deep'].map(tier => (
               <button key={tier} onClick={() => runResearch(tier)} disabled={researching}
-                style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: '1px solid var(--border)', background: researching ? 'var(--bg-tertiary)' : 'var(--bg-hover)', color: 'var(--text-primary)', cursor: researching ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
-                {researching ? '...' : tier}
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {tier === 'quick' ? '2 searches' : tier === 'standard' ? '5 searches' : '10 searches'}
-                </div>
+                className="flex-1 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 rounded-lg py-2 text-sm font-bold capitalize">
+                {tier}<br /><span className="text-xs font-normal text-gray-300">{tier === 'quick' ? '2' : tier === 'standard' ? '5' : '10'} Searches</span>
               </button>
             ))}
           </div>
+          {researching && <p className="text-yellow-400 text-sm mt-2 animate-pulse">Researching...</p>}
           {researchResult && (
-            <div style={{ padding: 12, borderRadius: 8, background: researchResult.error ? 'rgba(255,50,50,.1)' : 'rgba(61,204,74,.1)', fontSize: 12 }}>
-              {researchResult.error ? `❌ ${researchResult.error}` : `✅ ${researchResult.searches} searches · ${researchResult.evidence_count} evidence items · ${researchResult.cost_estimate}`}
+            <div className={`mt-2 p-2 rounded text-sm ${researchResult.error ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+              {researchResult.error || `\u2705 ${researchResult.searches} searches \u00b7 ${researchResult.evidence_count} evidence items \u00b7 ${researchResult.cost_estimate}`}
             </div>
           )}
-          {p.research_runs?.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 6 }}>History</div>
-              {p.research_runs.map((r: any) => (
-                <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 12, display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{r.tier} · {r.search_count} searches</span>
-                  <span style={{ color: r.status === 'completed' ? 'var(--accent-green)' : 'var(--accent-yellow)' }}>{r.status}</span>
+          {prospect.research_runs?.length > 0 && (
+            <div className="mt-3 text-xs text-gray-400">
+              <p className="font-bold">History</p>
+              {prospect.research_runs.map((r: any) => (
+                <div key={r.id} className="flex justify-between mt-1">
+                  <span>{r.tier} \u00b7 {r.search_count} searches</span>
+                  <span>{r.status}</span>
                 </div>
               ))}
             </div>
@@ -113,53 +139,90 @@ export default function ProspectDetail() {
         </div>
       </div>
 
-      {/* Evidence */}
-      {p.evidence?.length > 0 && (
-        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📄 Evidence ({p.evidence.length})</h3>
-          {p.evidence.filter((e: any) => !e.source_url.startsWith('perplexity://')).slice(0, 10).map((e: any) => (
-            <div key={e.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 12 }}>
-              <a href={e.source_url} target="_blank" rel="noopener" style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>{e.source_title || e.source_url}</a>
-              <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{e.snippet?.substring(0, 200)}...</div>
-            </div>
-          ))}
+      {/* Draft Generation Card */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
+        <h2 className="font-bold text-lg mb-2">\u270D\uFE0F Draft Outreach</h2>
+        <p className="text-gray-400 text-sm mb-3">Generate personalized outreach drafts using Claude AI. Requires research first.</p>
+        <div className="flex gap-2">
+          <button onClick={() => generateDrafts('email')} disabled={drafting || prospect.status === 'new'}
+            className="bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg py-2 px-6 text-sm font-bold">
+            \u2709 Generate Email Drafts
+          </button>
+          <button onClick={() => generateDrafts('linkedin')} disabled={drafting || prospect.status === 'new'}
+            className="bg-blue-700 hover:bg-blue-600 disabled:opacity-50 rounded-lg py-2 px-6 text-sm font-bold">
+            \u{1F4AC} Generate LinkedIn Drafts
+          </button>
         </div>
-      )}
-
-      {/* Insights */}
-      {p.insights?.length > 0 && (
-        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>💡 Insights</h3>
-          {p.insights.map((i: any) => (
-            <div key={i.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, textTransform: 'capitalize' }}>{i.insight_type?.replace(/_/g, ' ')}</div>
-              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>{typeof i.content === 'object' ? (i.content.summary || JSON.stringify(i.content)) : i.content}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Outcome Logger */}
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 Log Outcome</h3>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['positive', 'neutral', 'objection', 'no_reply', 'referral', 'not_relevant'].map(type => (
-            <button key={type} onClick={() => logOutcome(type, '')}
-              style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12, textTransform: 'capitalize' }}>
-              {type.replace(/_/g, ' ')}
-            </button>
-          ))}
-        </div>
-        {p.outcomes?.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            {p.outcomes.map((o: any) => (
-              <div key={o.id} style={{ padding: '6px 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-                {o.outcome_type} — {new Date(o.created_at).toLocaleDateString()}
-              </div>
-            ))}
+        {prospect.status === 'new' && <p className="text-yellow-500 text-xs mt-2">Run research first before generating drafts.</p>}
+        {drafting && <p className="text-purple-400 text-sm mt-2 animate-pulse">Generating drafts... (extracting profile, writing variants, scoring...)</p>}
+        {draftResult?.error && <p className="text-red-400 text-sm mt-2">{draftResult.error}</p>}
+        {draftResult?.status === 'completed' && (
+          <div className="mt-2 p-2 rounded text-sm bg-purple-900/50 text-purple-300">
+            \u2705 {draftResult.drafts_count} drafts generated \u00b7 {draftResult.artifacts_count} profile artifacts \u00b7 {draftResult.cost_estimate}
           </div>
         )}
       </div>
+
+      {/* Drafts Display */}
+      {drafts.length > 0 && (
+        <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
+          <h2 className="font-bold text-lg mb-4">\u{1F4DD} Drafts ({drafts.length})</h2>
+          <div className="space-y-4">
+            {drafts.map((draft: any) => (
+              <div key={draft.id} className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-indigo-700 px-2 py-0.5 rounded text-xs font-bold">V{draft.variant_number}</span>
+                    <span className="bg-gray-700 px-2 py-0.5 rounded text-xs">{draft.hook_type}</span>
+                    <span className="bg-gray-700 px-2 py-0.5 rounded text-xs">{draft.channel}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    {draft.open_score && <span title="Open Score" className="text-green-400">O:{draft.open_score}</span>}
+                    {draft.read_score && <span title="Read Score" className="text-blue-400">R:{draft.read_score}</span>}
+                    {draft.reply_score && <span title="Reply Score" className="text-purple-400">Re:{draft.reply_score}</span>}
+                    {draft.claims_audit_passed !== null && (
+                      <span className={draft.claims_audit_passed ? 'text-green-400' : 'text-red-400'}>
+                        {draft.claims_audit_passed ? '\u2705 Claims OK' : '\u26A0\uFE0F Claims'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {draft.subject && <p className="text-yellow-300 text-sm font-bold mb-1">Subject: {draft.subject}</p>}
+                <p className="text-gray-200 text-sm whitespace-pre-wrap">{draft.body}</p>
+                <p className="text-gray-500 text-xs mt-2">Angle: {draft.angle} | CTA: {draft.cta_type} | Length: {draft.length_bucket}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Log Outcome */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
+        <h2 className="font-bold text-lg mb-2">\u{1F4CA} Log Outcome</h2>
+        <div className="flex flex-wrap gap-2">
+          {['positive', 'neutral', 'objection', 'no_reply', 'referral', 'not_relevant'].map(o => (
+            <button key={o} onClick={() => logOutcome(o)}
+              className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm capitalize">
+              {o.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Evidence Section */}
+      {prospect.web_evidence?.length > 0 && (
+        <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
+          <h2 className="font-bold text-lg mb-3">\u{1F4C1} Evidence ({prospect.web_evidence.length})</h2>
+          <div className="space-y-3 text-sm">
+            {prospect.web_evidence.map((e: any) => (
+              <div key={e.id}>
+                <p className="text-blue-400">{e.source_url}</p>
+                <p className="text-gray-400 mt-1">{e.snippet?.substring(0, 200)}...</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
