@@ -24,9 +24,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/" label="Dashboard" icon="📊" />
               <NavLink href="/accounts" label="Accounts" icon="🏢" />
               <NavLink href="/prospects" label="All Prospects" icon="👤" />
+                          <NavLink href="/quick-draft" label="Quick Draft" icon="⚡" />
             </div>
             <div style={{ marginTop: 'auto', padding: '16px 20px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
-              Phase 2 — Live Data + Sheet Sync
+                          Phase 3.5 — Empathy Gate + Quick Draft
             </div>
           </nav>
           <main style={{ flex: 1, overflow: 'auto', padding: 32 }}>
