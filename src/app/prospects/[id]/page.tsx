@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 
 export default function ProspectDetail() {
@@ -12,6 +12,12 @@ export default function ProspectDetail() {
   const [drafting, setDrafting] = useState(false);
   const [draftResult, setDraftResult] = useState<any>(null);
   const [drafts, setDrafts] = useState<any[]>([]);
+
+  // LinkedIn upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
     fetch(`/api/prospects/${params.id}`)
@@ -27,7 +33,10 @@ export default function ProspectDetail() {
       .catch(() => {});
   };
 
-  useEffect(() => { load(); loadDrafts(); }, [params.id]);
+  useEffect(() => {
+    load();
+    loadDrafts();
+  }, [params.id]);
 
   const runResearch = async (tier: string) => {
     setResearching(true);
@@ -66,6 +75,38 @@ export default function ProspectDetail() {
     setDrafting(false);
   };
 
+  // LinkedIn upload handler
+  const handleLinkedInUpload = async (file: File) => {
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`/api/prospects/${params.id}/linkedin-upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      setUploadResult(data);
+      load();
+    } catch (err: any) {
+      setUploadResult({ error: err.message });
+    }
+    setUploading(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleLinkedInUpload(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleLinkedInUpload(file);
+  };
+
   const logOutcome = async (outcomeType: string) => {
     await fetch(`/api/prospects/${params.id}/outcomes`, {
       method: 'POST',
@@ -79,13 +120,17 @@ export default function ProspectDetail() {
   if (!prospect) return <div className="p-8 text-red-400">Prospect not found</div>;
 
   const statusColor: Record<string, string> = {
-    new: 'bg-blue-600', researched: 'bg-green-600', drafted: 'bg-purple-600',
-    contacted: 'bg-yellow-600', engaged: 'bg-emerald-600',
+    new: 'bg-blue-600',
+    researched: 'bg-green-600',
+    drafted: 'bg-purple-600',
+    contacted: 'bg-yellow-600',
+    engaged: 'bg-emerald-600',
   };
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <a href="/prospects" className="text-gray-400 hover:text-white text-sm">Back</a>
+
       <div className="flex items-start justify-between mt-2">
         <div>
           <h1 className="text-3xl font-bold">{prospect.full_name}</h1>
@@ -103,6 +148,11 @@ export default function ProspectDetail() {
             {prospect.location && <div className="flex justify-between"><span className="text-gray-400">Location</span><span>{prospect.location}</span></div>}
             {prospect.seniority && <div className="flex justify-between"><span className="text-gray-400">Seniority</span><span>{prospect.seniority}</span></div>}
             {prospect.bu_hypothesis && <div className="flex justify-between"><span className="text-gray-400">BU Hypothesis</span><span>{prospect.bu_hypothesis}</span></div>}
+            {prospect.raw_linkedin_text && (
+              <div className="mt-2 pt-2 border-t border-gray-700">
+                <span className="text-green-400 text-xs font-bold">LinkedIn Data Available</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -135,6 +185,61 @@ export default function ProspectDetail() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* LinkedIn Profile Upload Section */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
+        <h2 className="font-bold text-lg mb-2">LinkedIn Profile</h2>
+        <p className="text-gray-400 text-sm mb-3">
+          Upload a screenshot or PDF of the prospect's LinkedIn profile for deeper analysis.
+          The file is processed and immediately discarded — never stored.
+        </p>
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+            dragOver
+              ? 'border-blue-400 bg-blue-900/20'
+              : 'border-gray-600 hover:border-gray-400 hover:bg-gray-700/30'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          {uploading ? (
+            <div className="text-blue-400 animate-pulse">
+              <p className="text-lg font-bold">Extracting profile data...</p>
+              <p className="text-sm mt-1">Claude is analyzing the LinkedIn profile</p>
+            </div>
+          ) : (
+            <div>
+              <div className="text-3xl mb-2">📄</div>
+              <p className="text-gray-300 font-medium">Drop LinkedIn profile here or click to upload</p>
+              <p className="text-gray-500 text-xs mt-1">Supports PDF, PNG, JPEG, WEBP, GIF</p>
+            </div>
+          )}
+        </div>
+        {uploadResult && (
+          <div className={`mt-3 p-3 rounded text-sm ${
+            uploadResult.error ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'
+          }`}>
+            {uploadResult.error
+              ? uploadResult.error
+              : `Extracted ${uploadResult.artifacts_saved} profile sections (${uploadResult.extracted_fields?.join(', ')}) — ${uploadResult.cost_estimate}`
+            }
+          </div>
+        )}
+        {prospect.raw_linkedin_text && (
+          <div className="mt-3 text-xs text-gray-500">
+            LinkedIn data on file (last uploaded). Will be used in draft generation.
+          </div>
+        )}
       </div>
 
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 mt-6">
