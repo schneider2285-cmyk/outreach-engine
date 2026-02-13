@@ -4,6 +4,16 @@ import { generateDrafts, empathyGate, rewriteDraft, voiceLint, ProfileArtifact, 
 // POST /api/quick-draft
 // Pipeline: Generate drafts -> Voice Lint -> Auto-rewrite lint failures -> Empathy Gate -> Auto-rewrite gate failures -> Re-score
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 interface QuickDraftInput {
   channel: 'email' | 'linkedin' | 'connection_note';
   prospect_name: string; prospect_title?: string; company: string; seniority?: string;
@@ -16,10 +26,10 @@ interface QuickDraftInput {
 
 export async function POST(request: NextRequest) {
   let input: QuickDraftInput;
-  try { input = await request.json(); } catch { return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 }); }
+  try { input = await request.json(); } catch { return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400, headers: corsHeaders }); }
 
   if (!input.prospect_name || !input.company || !input.channel) {
-    return NextResponse.json({ error: 'Missing required fields: prospect_name, company, channel' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing required fields: prospect_name, company, channel' }, { status: 400, headers: corsHeaders });
   }
 
   try {
@@ -182,9 +192,9 @@ export async function POST(request: NextRequest) {
       })),
       tokens: { input: totalIn, output: totalOut },
       cost_estimate: '$' + ((totalIn * 0.003 + totalOut * 0.015) / 1000).toFixed(4),
-    });
+    }, { headers: corsHeaders });
   } catch (err: any) {
     console.error('Quick draft error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500, headers: corsHeaders });
   }
 }
