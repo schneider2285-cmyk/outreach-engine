@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, TENANT_ID } from '@/lib/supabase';
 import { extractProfile, generateDrafts, empathyGate, rewriteDraft } from '@/lib/claude';
+import { linkedinVoiceLint } from '@/lib/linkedin';
 
 // POST /api/prospects/[id]/drafts/generate
 // Phase 3.5: Full pipeline with Empathy Gate v1.2 + auto-rewrite
@@ -116,6 +117,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
     }
 
+    // LinkedIn Voice Lint: deterministic gate for LinkedIn channel
+    if (channel === 'linkedin') {
+      for (let i = 0; i < finalDrafts.length; i++) {
+        const item = finalDrafts[i];
+        const lintResult = linkedinVoiceLint(item.draft.body);
+        if (!lintResult.pass) {
+          const { draft: lintRewritten, usage: lintRwU } = await rewriteDraft(
+            item.draft, item.gate, prospect.full_name, prospect.title, accountName, artifacts
+          );
+          totalRewriteUsage.input_tokens += lintRwU?.input_tokens || 0;
+          totalRewriteUsage.output_tokens += lintRwU?.output_tokens || 0;
+          finalDrafts[i] = { ...item, draft: lintRewritten, linkedin_lint_rewritten: true };
+        }
+      }
+    }
     // Save drafts
     const savedDrafts = [];
     for (const item of finalDrafts) {
