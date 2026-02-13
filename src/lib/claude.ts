@@ -1,3 +1,5 @@
+import { LINKEDIN_SYSTEM, buildLinkedInPlan, linkedinVoiceLint, LinkedInPlan } from './linkedin';
+
 // Claude API client for extraction, drafting, and Empathy Gate scoring
 // Phase 4.0: Philosophy-Driven Outreach + Voice Lint + Empathy Gate v1.2
 
@@ -222,6 +224,40 @@ export async function generateDrafts(
   let totalUsage = { input_tokens: 0, output_tokens: 0 };
 
   for (let v = 0; v < numVariants; v++) {
+
+        // --- LINKEDIN CHANNEL: Plan-based generation ---
+    if (channel === 'linkedin') {
+      for (let v = 0; v < numVariants; v++) {
+        const plan = buildLinkedInPlan(prospectName, accountName, personaSegment, artifacts, v);
+        const linkedinPrompt = 'Render this LinkedIn DM from the plan below. Output ONLY the final message text.\n\n' +
+          'PLAN:\n' +
+          'trigger_line: ' + plan.trigger_line + '\n' +
+          'relevance_line: ' + plan.relevance_line + '\n' +
+          'identity_line: ' + plan.identity_line + '\n' +
+          'role_1: ' + plan.role_1 + '\n' +
+          'role_2: ' + plan.role_2 + '\n' +
+          'cta_line: ' + plan.cta_line + '\n\n' +
+          'Assemble into 2-3 lines. Do not add anything. Do not invent. Just render.';
+
+        const result = await callClaude([{ role: 'user', content: linkedinPrompt }], LINKEDIN_SYSTEM, 500);
+        totalUsage.input_tokens += result.usage?.input_tokens || 0;
+        totalUsage.output_tokens += result.usage?.output_tokens || 0;
+
+        drafts.push({
+          channel: 'linkedin',
+          variant_number: v + 1,
+          subject: undefined,
+          body: result.text.trim(),
+          hook_type: triggers.length > 0 ? 'trigger' : 'timing',
+          angle: plan.angle,
+          cta_type: 'permission_menu',
+          length_bucket: 'short',
+        });
+      }
+      return { drafts, usage: totalUsage };
+    }
+
+    // --- EMAIL CHANNEL: Original generation logic ---
     const useTrigger = triggers.length > 0 ? [triggers[v % triggers.length]] : [];
 
     const inputPayload = JSON.stringify({
@@ -391,7 +427,7 @@ export async function rewriteDraft(
   });
 
   const prompt = 'Rewrite this outreach message using the input JSON below. Follow fix_instructions and obey all bans.\n' + inputPayload + '\n\nReturn ONLY the raw message in the OUTPUT FORMAT specified in the system prompt. No JSON wrapper. No markdown.';
-  const result = await callClaude([{ role: 'user', content: prompt }], MATT_VOICE_SYSTEM, 1500);
+  const result = await callClaude([{ role: 'user', content: prompt }], originalDraft.channel === 'linkedin' ? LINKEDIN_SYSTEM : MATT_VOICE_SYSTEM, 1500);
 
   const text = result.text.trim();
   let subject: string | undefined;
